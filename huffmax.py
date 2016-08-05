@@ -233,23 +233,32 @@ class Huffmax(Layer):
 			outputs = []
 			for i in range(self.nb_classes):
 				path_length = path_lengths[i]
+				# Get required portions of the weights
 				W = big_W[i, :, :path_length * 2]  # input_dim, nb_nodes * 2
 				b = big_b[i, :path_length * 2]  # nb_nodes * 2
+				# Compute dot
 				output = K.dot(input_vector, W) + b  # batch_size, nb_nodes * 2
+				# Apply activation function
 				output = K.reshape(output, (-1, 2))  # batch_size, nb_nodes, 2
 				output = self.activation(output)  # batch_size * nb_nodes, 2
 				output = K.reshape(output, (-1, path_length, 2))  # batch_size, nb_nodes, 2
+				# Normalize lengths
 				if path_length < self.max_tree_depth:
 					output = K.concatenate([output] + [output[:, :1, :] * 0 + 0.5] * (2 * (self.max_tree_depth - path_length)), axis=1)  # batch_size, max_tree_depth, 2
 				outputs += [output]
 			outputs = K.pack(outputs)  # nb_classes, batch_size, max_tree_depth, 2
+			# Pick required outputs
 			req_outputs = K.gather(outputs, target_classes)  # batch_size, nb_req_classes, batch_size, max_tree_depth, 2
+			# Convert to square tensor
 			req_outputs = K.permute_dimensions(req_outputs, (0, 2, 1, 3, 4))  # batch_size, batch_size, nb_req_classes, max_tree_depth, 2
+			# Pick diagonal elements
 			req_outputs = K.reshape(req_outputs, (-1, nb_req_classes, self.max_tree_depth, 2))  # batch_size * batch_size, nb_req_classes, max_tree_depth, 2
 			batch_size = K.shape(input_vector)[0]
 			diag_indices = arange(batch_size) * (batch_size + 1)  # batch_size
 			diag_elems = K.gather(req_outputs, diag_indices)  # batch_size, nb_req_classes, max_tree_depth, 2
+			# Gather required huffman codes
 			req_huffman_codes = K.gather(huffman_codes, target_classes)  # nb_req_classes, max_tree_depth, 2
+			# Tree traversal
 			req_probs = K.prod(K.sum(diag_elems * req_huffman_codes))  # batch_size, nb_req_classes
 			return return req_probs	
 
