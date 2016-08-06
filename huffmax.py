@@ -1,4 +1,4 @@
-from keras.layers import Layer, Dense
+from keras.layers import Layer, Dense, InputSpec
 from keras import activations
 from keras import backend as K
 import numpy as np
