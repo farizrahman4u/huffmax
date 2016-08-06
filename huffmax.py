@@ -1,8 +1,7 @@
-from keras.layers import*
+from keras.layers import Layer, Dense
 from keras import activations
 from keras import backend as K
 import numpy as np
-from keras.models import*
 import warnings
 import sys
 import datetime
@@ -214,12 +213,8 @@ class Huffmax(Layer):
 			# Apply masks so that gradients do not flow into the padded regions of the weights
 			big_W *= self.W_mask  # nb_classes, input_dim, max_tree_depth * 2
 			big_b *= self.b_mask  # nb_classes, max_tree_depth * 2
-			# Use 1 gather op instead of 2
-			big_b = K.expand_dims(big_b, 1)  # nb_classes, 1, max_tree_depth * 2
-			big_Wb = K.concatenate([big_W, big_b], 1)  # nb_classes, input_dim + 1, max_tree_depth * 2
-			req_Wb = K.gather(big_Wb, target_classes)  # batch_size, nb_req_classes, input_dim + 1, max_tree_depth * 2
-			req_W = req_Wb[:, :, :input_dim, :]  # batch_size, nb_req_classes, input_dim, max_tree_depth * 2
-			req_b = req_Wb[:, :, -1, :]  # batch_size, nb_req_classes, max_tree_depth * 2
+			req_W = K.gather(big_W, target_classes)  # batch_size, nb_req_classes, input_dim, max_tree_depth * 2
+			req_b = K.gather(big_b, target_classes)  # batch_size, nb_req_classes, max_tree_depth * 2
 			# Compute dot
 			outputs_at_nodes = K.batch_dot(input_vector, req_W, axes=(1, 2)) + req_b  # batch_size, nb_req_classes, max_tree_depth * 2
 			# Apply activation function
