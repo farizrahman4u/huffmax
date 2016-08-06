@@ -255,12 +255,13 @@ class Huffmax(Layer):
 			req_outputs = K.reshape(req_outputs, (-1, nb_req_classes, self.max_tree_depth, 2))  # batch_size * batch_size, nb_req_classes, max_tree_depth, 2
 			batch_size = K.shape(input_vector)[0]
 			diag_indices = arange(batch_size) * (batch_size + 1)  # batch_size
+			diag_indices = K.expand_dims(diag_indices, 1)  # batch_size, 1
 			diag_elems = K.gather(req_outputs, diag_indices)  # batch_size, nb_req_classes, max_tree_depth, 2
 			# Gather required huffman codes
 			req_huffman_codes = K.gather(huffman_codes, target_classes)  # nb_req_classes, max_tree_depth, 2
 			# Tree traversal
 			req_probs = K.prod(K.sum(diag_elems * req_huffman_codes))  # batch_size, nb_req_classes
-			return return req_probs	
+			return req_probs	
 
 	def get_output_shape_for(self, input_shape):
 		return (input_shape[0][0], input_shape[1][1])
@@ -272,6 +273,5 @@ class Huffmax(Layer):
 				  'frequency_table': self.frequency_table,
 				  'kwargs': self.kwargs
 				  }
-		base_config = super(HierarchicalSoftmax, self).get_config()
+		base_config = super(Huffmax, self).get_config()
 		return dict(list(base_config.items()) + list(config.items()))
-
