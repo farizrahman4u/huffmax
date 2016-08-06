@@ -37,12 +37,12 @@ class Huffmax(Layer):
 		self.activation = activations.get(activation)
 		self.kwargs = kwargs
 		self.verbose = verbose
-		super(HierarchicalSoftmax, self).__init__()
+		super(Huffmax, self).__init__()
 
 	def build(self, input_shape):
 		if self.verbose:
 			print 'build started'
-		self.input_spec = [InputSpec(dtype=K.floatx(), shape=input_shape[0]), InputSpec(dtype='int32', shape=(input_shape[1]))]
+		self.input_spec = [InputSpec(shape=input_shape[0]), InputSpec(shape=(input_shape[1]))]
 		# Calculate number of nodes required from nb_classes
 		log = np.floor(np.log(self.nb_classes) / np.log(2))
 		nb_nodes = np.power(2, log + 1) - 1
@@ -169,7 +169,7 @@ class Huffmax(Layer):
 		self.trainable_weights = [self.W]
 		if self.root_node.bias:
 			self.trainable_weights += [self.b]
-		super(HierarchicalSoftmax, self).build(input_shape)
+		super(Huffmax, self).build(input_shape)
 		if self.verbose:
 			print 'Matrices generation complete.'
 
@@ -192,6 +192,9 @@ class Huffmax(Layer):
 	def call(self, x, mask=None):
 		input_vector = x[0]  # batch_size, input_dim
 		target_classes = x[1]  # batch_size, nb_req_classes
+		# Make sure target_classes is of integer type
+		if K.dtype(target_classes) != 'int32':
+			target_classes = K.cast(target_classes, 'int32')
 		input_dim = self.input_spec[0].shape[1]
 		nb_req_classes = self.input_spec[1].shape[1]
 		big_W = self.W  # nb_classes, input_dim, max_tree_depth * 2
@@ -224,9 +227,9 @@ class Huffmax(Layer):
 			p = self.activation(outputs_at_nodes)  # batch_size * nb_req_classes * max_tree_depth, 2
 			p = K.reshape(p, (-1, nb_req_classes, self.max_tree_depth, 2))  # batch_size, nb_req_classes, max_tree_depth, 2
 			# Pick required huffman codes
-			p *= K.gather(huffman_codes, target_classes)  # batch_size, nb_req_classes, max_tree_depth, 2
+			req_huffman_codes = K.gather(huffman_codes, target_classes)  # batch_size, nb_req_classes, max_tree_depth, 2
 			# Tree traversal
-			p = K.prod(K.sum(p))  # batch_size, nb_req_classes
+			p = K.prod(K.sum(p * req_huffman_codes, axis=-1), axis=-1)  # batch_size, nb_req_classes
 			return p			
 		elif self.mode == 1:
 			# In this mode, we compute the node outputs for each class, and then pick the required outputs
@@ -244,7 +247,7 @@ class Huffmax(Layer):
 				output = K.reshape(output, (-1, path_length, 2))  # batch_size, nb_nodes, 2
 				# Normalize lengths
 				if path_length < self.max_tree_depth:
-					output = K.concatenate([output] + [output[:, :1, :] * 0 + 0.5] * (2 * (self.max_tree_depth - path_length)), axis=1)  # batch_size, max_tree_depth, 2
+					output = K.concatenate([output] + [output[:, :1, :] * 0 + 0.5] * (self.max_tree_depth - path_length), axis=1)  # batch_size, max_tree_depth, 2
 				outputs += [output]
 			outputs = K.pack(outputs)  # nb_classes, batch_size, max_tree_depth, 2
 			# Pick required outputs
@@ -255,13 +258,12 @@ class Huffmax(Layer):
 			req_outputs = K.reshape(req_outputs, (-1, nb_req_classes, self.max_tree_depth, 2))  # batch_size * batch_size, nb_req_classes, max_tree_depth, 2
 			batch_size = K.shape(input_vector)[0]
 			diag_indices = arange(batch_size) * (batch_size + 1)  # batch_size
-			diag_indices = K.expand_dims(diag_indices, 1)  # batch_size, 1
 			diag_elems = K.gather(req_outputs, diag_indices)  # batch_size, nb_req_classes, max_tree_depth, 2
 			# Gather required huffman codes
 			req_huffman_codes = K.gather(huffman_codes, target_classes)  # nb_req_classes, max_tree_depth, 2
 			# Tree traversal
-			req_probs = K.prod(K.sum(diag_elems * req_huffman_codes))  # batch_size, nb_req_classes
-			return req_probs	
+			req_probs = K.prod(K.sum(diag_elems * req_huffman_codes, axis=-1), axis=-1)  # batch_size, nb_req_classes
+			return req_probs
 
 	def get_output_shape_for(self, input_shape):
 		return (input_shape[0][0], input_shape[1][1])
