@@ -4,7 +4,7 @@ from keras.models import Sequential
 import numpy as np
 import time
 
-
+# TODO : Make this work
 
 batch_size = 32
 input_dim = 100
