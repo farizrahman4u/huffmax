@@ -73,7 +73,6 @@ class Huffmax(Layer):
 			self.input_spec = [InputSpec(shape=input_shape)]
 			input_shape = [input_shape, None]
 		input_dim = input_shape[0][1]
-		# Calculate number of nodes required from nb_classes
 		def combine_nodes(left, right):
 			parent_node = Node()
 			parent_node.left = left
@@ -141,9 +140,9 @@ class Huffmax(Layer):
 		if self.verbose:
 			print('Setting weights...')
 
-		self.W = self.init((len(self.nodes), input_dim, 2))
+		self.W = self.init((len(self.nodes), input_dim, 1))
 		if self.bias:
-			self.b = K.zeros((len(self.nodes), 2))
+			self.b = K.zeros((len(self.nodes), 1))
 			self.trainable_weights = [self.W, self.b]
 		else:
 
@@ -207,18 +206,16 @@ class Huffmax(Layer):
 			input_dim = self.input_spec[0].shape[1]
 			nb_req_classes = self.input_spec[1].shape[1]
 			path_lengths = map(len, self.paths)
-			huffman_codes = K.variable(np.array(self.padded_one_hot_huffman_codes))
+			huffman_codes = K.variable(np.array(self.huffman_codes))
 			req_nodes = K.gather(self.class_path_map, target_classes)
 			req_W = K.gather(self.W, req_nodes)
 			y = K.batch_dot(input_vector, req_W, axes=(1, 3))
 			if self.bias:
 				req_b = K.gather(self.b, req_nodes)
 				y += req_b
-			y = K.exp(y - K.max(y))
-			y /= K.sum(y, axis=-1, keepdims=True)
+			y = K.sigmoid(y[:, :, :, 0])
 			req_huffman_codes = K.gather(huffman_codes, target_classes)
-			# Tree traversal
-			return K.prod(K.sum(y * req_huffman_codes, axis=-1), axis=-1)
+			return K.prod(req_huffman_codes + y - 2 * req_huffman_codes * y, axis=-1)  # Thug life
 		elif self.mode == 1:
 			# Many tiny matrix muls
 			probs = []
@@ -229,10 +226,12 @@ class Huffmax(Layer):
 				for j in range(len(path)):
 					node = path[j]
 					node_index = self.node_indices[node]
-					p = K.dot(input_vector, self.W[node_index, :, :])
+					p = K.dot(input_vector, self.W[node_index, :, :])[:, 0]
 					if self.bias:
-						p += self.b[node_index, :]
-					prob *= K.softmax(p)[:, huffman_code[j]]
+						p += self.b[node_index, :][0]
+					h = huffman_code[j]
+					p = K.sigmoid(p)
+					prob *= h + p - 2 * p * h
 				probs += [prob]
 			probs = K.pack(probs)
 			req_probs = K.gather(probs, target_classes)
@@ -283,7 +282,7 @@ class HuffmaxClassifier(Huffmax):
 				if self.bias:
 					node_output += get_node_b(node)
 				left_prob = node_output[:, 0]
-				right_prob = node_output[:, 1]
+				right_prob = 1 - node_output[:, 0]
 				left_node_output = compute_output(input, node.left)
 				right_node_output = compute_output(input, node.right)
 				return K.switch(left_prob > right_prob, left_node_output, right_node_output)
